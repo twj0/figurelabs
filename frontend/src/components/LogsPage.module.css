@@ -1,0 +1,143 @@
+.logs {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  margin: 0 0 1rem 0;
+  font-size: 2rem;
+  color: #24292f;
+}
+
+.controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.filterBtn {
+  padding: 0.5rem 1rem;
+  border: 1px solid #d0d7de;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+.filterBtn:hover {
+  background: #f6f8fa;
+}
+
+.filterBtn.active {
+  background: #1f6feb;
+  color: white;
+  border-color: #1f6feb;
+}
+
+.autoRefresh {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.refreshBtn {
+  padding: 0.5rem 1rem;
+  background: #1f6feb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.refreshBtn:hover {
+  background: #1a5cd9;
+}
+
+.logList {
+  background: white;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.logEntry {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #d0d7de;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 0.875rem;
+}
+
+.logEntry:last-child {
+  border-bottom: none;
+}
+
+.logEntry.info {
+  background: #ffffff;
+}
+
+.logEntry.warning {
+  background: #fff8e5;
+}
+
+.logEntry.error {
+  background: #ffe8e8;
+}
+
+.timestamp {
+  color: #656d76;
+  flex-shrink: 0;
+  width: 100px;
+}
+
+.level {
+  flex-shrink: 0;
+  width: 70px;
+  font-weight: 600;
+}
+
+.level.info {
+  color: #1f6feb;
+}
+
+.level.warning {
+  color: #fb8500;
+}
+
+.level.error {
+  color: #d73a49;
+}
+
+.source {
+  color: #8250df;
+  flex-shrink: 0;
+  width: 100px;
+}
+
+.message {
+  flex: 1;
+  color: #24292f;
+}
+
+.empty {
+  padding: 3rem;
+  text-align: center;
+  color: #656d76;
+}

@@ -1,0 +1,122 @@
+.dashboard {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 2rem;
+  color: #24292f;
+}
+
+.timeSelector {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.timeSelector button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #d0d7de;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+}
+
+.timeSelector button:hover {
+  background: #f6f8fa;
+}
+
+.timeSelector button.active {
+  background: #1f6feb;
+  color: white;
+  border-color: #1f6feb;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.card {
+  background: white;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.cardLabel {
+  font-size: 0.875rem;
+  color: #656d76;
+  margin-bottom: 0.5rem;
+}
+
+.cardValue {
+  font-size: 2rem;
+  font-weight: 600;
+  color: #24292f;
+}
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1rem;
+}
+
+.chartCard {
+  background: white;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.chartCard h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: #24292f;
+}
+
+.simpleChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 200px;
+}
+
+.bar {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  cursor: pointer;
+}
+
+.barFill {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  transition: opacity 0.2s;
+}
+
+.bar:hover .barFill {
+  opacity: 0.8;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+  font-size: 1.125rem;
+  color: #656d76;
+}

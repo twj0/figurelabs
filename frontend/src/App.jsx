@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import AccountsPage from './components/AccountsPage.jsx'
 import GeneratePage from './components/GeneratePage.jsx'
+import DashboardPage from './components/DashboardPage.jsx'
+import SettingsPage from './components/SettingsPage.jsx'
+import LogsPage from './components/LogsPage.jsx'
+import MonitorPage from './components/MonitorPage.jsx'
 import styles from './App.module.css'
+import { useStore } from './store.js'
 
 export default function App() {
-  const [tab, setTab] = useState('accounts')
-  const [activeAccount, setActiveAccount] = useState(null)
+  const [tab, setTab] = useState('dashboard')
+  const { activeAccount, setActiveAccount } = useStore()
 
   return (
     <div className={styles.shell}>
@@ -15,6 +20,18 @@ export default function App() {
           <span>FigureLabs AI</span>
         </div>
         <div className={styles.navTabs}>
+          <button
+            className={`${styles.navTab} ${tab === 'dashboard' ? styles.active : ''}`}
+            onClick={() => setTab('dashboard')}
+          >
+            Dashboard
+          </button>
+          <button
+            className={`${styles.navTab} ${tab === 'monitor' ? styles.active : ''}`}
+            onClick={() => setTab('monitor')}
+          >
+            Monitor
+          </button>
           <button
             className={`${styles.navTab} ${tab === 'accounts' ? styles.active : ''}`}
             onClick={() => setTab('accounts')}
@@ -29,6 +46,18 @@ export default function App() {
           >
             Generate
           </button>
+          <button
+            className={`${styles.navTab} ${tab === 'logs' ? styles.active : ''}`}
+            onClick={() => setTab('logs')}
+          >
+            Logs
+          </button>
+          <button
+            className={`${styles.navTab} ${tab === 'settings' ? styles.active : ''}`}
+            onClick={() => setTab('settings')}
+          >
+            Settings
+          </button>
         </div>
         {activeAccount && (
           <div className={styles.navAccount}>
@@ -41,6 +70,8 @@ export default function App() {
       </nav>
 
       <main className={styles.content}>
+        {tab === 'dashboard' && <DashboardPage />}
+        {tab === 'monitor' && <MonitorPage />}
         {tab === 'accounts' && (
           <AccountsPage
             activeAccount={activeAccount}
@@ -50,6 +81,8 @@ export default function App() {
         {tab === 'generate' && activeAccount && (
           <GeneratePage account={activeAccount} />
         )}
+        {tab === 'logs' && <LogsPage />}
+        {tab === 'settings' && <SettingsPage />}
       </main>
     </div>
   )

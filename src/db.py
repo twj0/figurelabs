@@ -1,8 +1,13 @@
-"""SQLite account store — async, one table."""
+"""Account store — migrated to use core/storage abstraction.
+
+Maintains backward compatibility with the old API while using the new storage layer.
+"""
 
 import aiosqlite
 from .config import DB_PATH
+from .core.storage import is_database_enabled, _get_sqlite_conn, _sqlite_lock
 
+# Legacy table for backward compatibility with direct DB access
 _CREATE = """
 CREATE TABLE IF NOT EXISTS accounts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,9 +24,13 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 
 async def init_db() -> None:
+    """Initialize database tables."""
+    # Initialize both legacy and new storage tables
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(_CREATE)
         await db.commit()
+
+    # Core storage initialization happens automatically on first access
 
 
 async def save_account(data: dict) -> dict:
@@ -48,6 +57,7 @@ async def save_account(data: dict) -> dict:
 
 
 async def list_accounts() -> list[dict]:
+    """List all accounts ordered by creation time."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
@@ -58,6 +68,7 @@ async def list_accounts() -> list[dict]:
 
 
 async def get_account(user_id: str) -> dict | None:
+    """Get a single account by user_id."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
@@ -68,6 +79,7 @@ async def get_account(user_id: str) -> dict | None:
 
 
 async def delete_account(user_id: str) -> bool:
+    """Delete an account by user_id."""
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("DELETE FROM accounts WHERE user_id = ?", (user_id,))
         await db.commit()
@@ -75,6 +87,7 @@ async def delete_account(user_id: str) -> bool:
 
 
 async def update_label(user_id: str, label: str) -> None:
+    """Update account label."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE accounts SET label = ? WHERE user_id = ?", (label, user_id)

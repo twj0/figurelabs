@@ -18,15 +18,15 @@ from ..export.formats import _request_svg_url, _PROXY
 from ..export._session import make_session
 from ..register.client import FigureLabsRegistration
 from ..register.mail_service import MailTmService, DuckMailService
+from ..core.database import stats_db
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+app = FastAPI(title="FigureLabs AI", docs_url=None, redoc_url=None)
+
+
+@app.on_event("startup")
+async def startup():
     await init_db()
-    yield
-
-
-app = FastAPI(title="FigureLabs AI", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +375,42 @@ def _build_pptx_bytes(session, png_s3_url: str) -> Optional[bytes]:
         zout.writestr(ct, etree.tostring(ct_tree, xml_declaration=True, encoding="UTF-8", standalone=True))
 
     return out.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Statistics API (新增)
+# ---------------------------------------------------------------------------
+
+class StatsResponse(BaseModel):
+    labels: list[str]
+    total_requests: list[int]
+    failed_requests: list[int]
+    rate_limited_requests: list[int]
+    model_requests: dict[str, list[int]]
+    model_ttfb_times: dict[str, list[float]]
+    model_total_times: dict[str, list[float]]
+
+
+class TotalCountsResponse(BaseModel):
+    success: int
+    failed: int
+
+
+@app.get("/api/stats", response_model=StatsResponse)
+async def api_get_stats(time_range: str = "24h"):
+    """Get aggregated statistics by time range (24h/7d/30d)."""
+    if time_range not in ("24h", "7d", "30d"):
+        raise HTTPException(status_code=400, detail="Invalid time_range. Use 24h, 7d, or 30d")
+
+    stats = await stats_db.get_stats_by_time_range(time_range)
+    return StatsResponse(**stats)
+
+
+@app.get("/api/stats/totals", response_model=TotalCountsResponse)
+async def api_get_total_counts():
+    """Get total success and failed request counts."""
+    success, failed = await stats_db.get_total_counts()
+    return TotalCountsResponse(success=success, failed=failed)
 
 
 # ---------------------------------------------------------------------------
