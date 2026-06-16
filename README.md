@@ -542,26 +542,3 @@ python test_api_endpoints.py
 
 1. 在 `frontend/src/components/` 创建组件
 2. 在 `frontend/src/App.jsx` 添加路由
-
----
-
-## 常见问题
-
-### Q: 如何切换数据库？
-A: 设置 `DATABASE_URL` 环境变量即可。
-
-### Q: 如何备份数据？
-A: 复制 `data/data.db` 文件。
-
-### Q: 前端如何代理 API？
-A: Vite 会自动将 `/api` 请求代理到后端。
-
----
-
-## 许可证
-
-MIT License
-
----
-
-**Made with ❤️ by FigureLabs Team**
