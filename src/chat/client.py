@@ -21,7 +21,6 @@ class FigureLabsChat:
         self.session.headers.update(
             {
                 "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
                 "Origin": self.BASE_URL,
                 "Referer": f"{self.BASE_URL}/",
             }
@@ -101,8 +100,7 @@ class FigureLabsChat:
             "scene": (None, scene),
             "text": (None, message),
         }
-        # HAR-confirmed: modelId=7 (Nano Banana Pro) works when ratio="Auto".
-        # Passing a specific ratio like "16:9" without modelId causes status=2.
+        # HAR-confirmed: modelId=7 + ratio="16:9" works. ratio="Auto" is rejected for new accounts.
         if model_id is not None:
             files["modelId"] = (None, str(model_id))
         if ratio:
@@ -113,11 +111,9 @@ class FigureLabsChat:
             files["firstMessage"] = (None, "true")
             files["title"] = (None, message[:80])
 
-        headers = {k: v for k, v in self.session.headers.items() if k != "Content-Type"}
         resp = self.session.post(
             f"{self.BASE_URL}/app-api/plot/chat/message",
             files=files,
-            headers=headers,
             stream=True,
             timeout=60,
         )
@@ -200,6 +196,24 @@ class FigureLabsChat:
                     print(f"[wait] poll {n} status={s} {step or ''}")
             time.sleep(poll_interval)
         print(f"[wait] timeout after {n} polls")
+        return None
+
+    def expand_prompt(self, message: str) -> Optional[str]:
+        """Call /message/expand to get an AI-enhanced version of the prompt.
+
+        HAR-confirmed: POST /app-api/plot/chat/message/expand?message=<text>
+        Returns the expanded prompt string or None on failure.
+        """
+        resp = self.session.post(
+            f"{self.BASE_URL}/app-api/plot/chat/message/expand",
+            params={"message": message},
+        )
+        try:
+            result = resp.json()
+            if result.get("code") == 0:
+                return result["data"]
+        except Exception:
+            pass
         return None
 
     def get_session_history(self, page: int = 1, page_size: int = 20) -> Optional[Dict]:

@@ -112,26 +112,38 @@ def download_pptx(
     output_dir: str = ".",
     filename: Optional[str] = None,
 ) -> Optional[str]:
-    """Build a PPTX locally, replicating the web UI's client-side pptxgenjs flow.
+    """Build a PPTX with a proper OOXML SVG embed (PowerPoint 2016+ vector-editable).
 
-    The web UI has no server-side PPTX endpoint (all /image/pptx variants return 404).
-    Instead it lazy-loads pptxgenjs and calls addImage with the SVG file directly
-    (type: image/svg+xml), producing a vector-quality PPTX.
+    OOXML SVG extension (ECMA-376 §14.2.1 + MS-PPTX §2.3.2):
+      <a:blip r:embed="rId1">          ← PNG fallback (required for older readers)
+        <a:extLst>
+          <a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}">
+            <asvg:svgBlip r:embed="rId2"/>  ← actual SVG (vector-quality in PPT 2016+)
+          </a:ext>
+        </a:extLst>
+      </a:blip>
 
-    We replicate this exactly: fetch the server-converted SVG, embed it as a native
-    SVG media part inside the PPTX ZIP using python-pptx + low-level lxml surgery.
+    Without this structure PowerPoint treats the embedded image as a raster blip
+    and rasterises it at screen resolution — the bug in the previous implementation.
     """
     try:
         from pptx import Presentation
         from pptx.util import Emu
         from pptx.oxml.ns import qn
         from lxml import etree
-        import io, zipfile, copy
+        import io, zipfile
     except ImportError:
         print("[pptx] python-pptx or lxml not installed — run: uv pip install python-pptx lxml")
         return None
 
-    # 1. Get SVG bytes from server
+    # 1. Fetch PNG bytes (fallback blip for older PowerPoint readers)
+    png_resp = session.get(_PROXY, params={"url": png_s3_url}, stream=True)
+    if png_resp.status_code != 200:
+        print(f"[pptx] PNG fetch HTTP {png_resp.status_code}")
+        return None
+    png_bytes = png_resp.content
+
+    # 2. Fetch SVG bytes
     svg_url = _request_svg_url(session, png_s3_url)
     if not svg_url:
         return None
@@ -141,7 +153,7 @@ def download_pptx(
         return None
     svg_bytes = svg_resp.content
 
-    # 2. Parse SVG viewBox to get aspect ratio
+    # 3. Parse SVG viewBox for slide aspect ratio
     try:
         root = etree.fromstring(svg_bytes)
         vb = root.get("viewBox", "")
@@ -151,107 +163,109 @@ def download_pptx(
         else:
             w_attr = root.get("width", "1376")
             h_attr = root.get("height", "768")
-            svg_w = float(''.join(c for c in w_attr if c.isdigit() or c == '.') or 1376)
-            svg_h = float(''.join(c for c in h_attr if c.isdigit() or c == '.') or 768)
+            svg_w = float("".join(c for c in w_attr if c.isdigit() or c == ".") or 1376)
+            svg_h = float("".join(c for c in h_attr if c.isdigit() or c == ".") or 768)
     except Exception:
         svg_w, svg_h = 1376.0, 768.0
 
-    # 3. Build blank PPTX in memory
+    # 4. Build blank PPTX in memory
     prs = Presentation()
-    # Match SVG aspect ratio; use widescreen 16:9 as baseline
-    slide_w = Emu(9144000)   # 10 inches in EMU (914400 EMU/inch)
+    slide_w = Emu(9144000)  # 10 inches
     slide_h = Emu(int(slide_w * svg_h / svg_w))
-    prs.slide_width  = slide_w
+    prs.slide_width = slide_w
     prs.slide_height = slide_h
+    prs.slides.add_slide(prs.slide_layouts[6])  # blank
 
-    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank
-
-    # 4. Save to in-memory ZIP so we can inject the SVG part manually
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
 
-    # 5. Open the PPTX ZIP and inject SVG as a media part
+    # 5. Patch PPTX ZIP: inject PNG + SVG, fix slide XML / rels / content-types
     out_buf = io.BytesIO()
-    slide_num = 1  # we added exactly one slide
-    svg_part_name = f"ppt/media/image1.svg"
-    slide_xml_name = f"ppt/slides/slide{slide_num}.xml"
-    rels_name = f"ppt/slides/_rels/slide{slide_num}.xml.rels"
+    slide_xml_name = "ppt/slides/slide1.xml"
+    rels_name = "ppt/slides/_rels/slide1.xml.rels"
     ct_name = "[Content_Types].xml"
-    # Files we will rewrite — skip them in the copy loop
     rewritten = {slide_xml_name, rels_name, ct_name}
 
+    _REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+    _IMG_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+    _A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    _P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+    _R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    _ASVG_NS = "http://schemas.microsoft.com/office/drawing/2016/SVG/main"
+    _SVG_EXT_URI = "{96DAC541-7B7A-43D3-8B79-37D633B846F1}"
+
     with zipfile.ZipFile(buf, "r") as zin, zipfile.ZipFile(out_buf, "w", zipfile.ZIP_DEFLATED) as zout:
-        # Copy all parts except the ones we will patch
         for item in zin.infolist():
             if item.filename not in rewritten:
                 zout.writestr(item, zin.read(item.filename))
 
-        # Add SVG media part
-        zout.writestr(svg_part_name, svg_bytes)
+        zout.writestr("ppt/media/image1.png", png_bytes)
+        zout.writestr("ppt/media/image2.svg", svg_bytes)
+
+        # --- slide1.xml: add <p:pic> with PNG blip + asvg:svgBlip extension ---
         slide_xml = zin.read(slide_xml_name)
         tree = etree.fromstring(slide_xml)
-
         spTree = tree.find(".//" + qn("p:spTree"))
 
-        # Build <p:pic> element with SVG image reference (rId will be wired below)
-        pic_xml = f"""<p:pic xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
-                            xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
-                            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <p:nvPicPr>
-    <p:cNvPr id="2" name="Figure"/>
-    <p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>
-    <p:nvPr/>
-  </p:nvPicPr>
-  <p:blipFill>
-    <a:blip r:embed="rId1SVG"/>
-    <a:stretch><a:fillRect/></a:stretch>
-  </p:blipFill>
-  <p:spPr>
-    <a:xfrm>
-      <a:off x="0" y="0"/>
-      <a:ext cx="{int(slide_w)}" cy="{int(slide_h)}"/>
-    </a:xfrm>
-    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
-  </p:spPr>
-</p:pic>"""
-        pic_elem = etree.fromstring(pic_xml)
-        spTree.append(pic_elem)
-
-        # Write patched slide XML back
+        pic_xml = (
+            f'<p:pic'
+            f' xmlns:p="{_P_NS}"'
+            f' xmlns:a="{_A_NS}"'
+            f' xmlns:r="{_R_NS}"'
+            f' xmlns:asvg="{_ASVG_NS}">'
+            f'<p:nvPicPr>'
+            f'<p:cNvPr id="2" name="Figure"/>'
+            f'<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>'
+            f'<p:nvPr/>'
+            f'</p:nvPicPr>'
+            f'<p:blipFill>'
+            f'<a:blip r:embed="rId1">'
+            f'<a:extLst>'
+            f'<a:ext uri="{_SVG_EXT_URI}">'
+            f'<asvg:svgBlip r:embed="rId2"/>'
+            f'</a:ext>'
+            f'</a:extLst>'
+            f'</a:blip>'
+            f'<a:stretch><a:fillRect/></a:stretch>'
+            f'</p:blipFill>'
+            f'<p:spPr>'
+            f'<a:xfrm><a:off x="0" y="0"/><a:ext cx="{int(slide_w)}" cy="{int(slide_h)}"/></a:xfrm>'
+            f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+            f'</p:spPr>'
+            f'</p:pic>'
+        )
+        spTree.append(etree.fromstring(pic_xml))
         zout.writestr(slide_xml_name, etree.tostring(tree, xml_declaration=True,
                                                       encoding="UTF-8", standalone=True))
 
-        # Patch slide1.xml.rels to add SVG relationship
+        # --- slide1.xml.rels: rId1=PNG, rId2=SVG ---
         try:
-            rels_xml = zin.read(rels_name)
-            rels_tree = etree.fromstring(rels_xml)
+            rels_tree = etree.fromstring(zin.read(rels_name))
         except KeyError:
             rels_tree = etree.fromstring(
-                b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
             )
-
-        ns = "http://schemas.openxmlformats.org/package/2006/relationships"
-        svg_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
-        rel = etree.SubElement(rels_tree, f"{{{ns}}}Relationship")
-        rel.set("Id", "rId1SVG")
-        rel.set("Type", svg_type)
-        rel.set("Target", "../media/image1.svg")
+        for rid, target in [("rId1", "../media/image1.png"), ("rId2", "../media/image2.svg")]:
+            rel = etree.SubElement(rels_tree, f"{{{_REL_NS}}}Relationship")
+            rel.set("Id", rid)
+            rel.set("Type", _IMG_TYPE)
+            rel.set("Target", target)
         zout.writestr(rels_name, etree.tostring(rels_tree, xml_declaration=True,
-                                                 encoding="UTF-8", standalone=True))
+                                                encoding="UTF-8", standalone=True))
 
-        # Patch [Content_Types].xml to register .svg extension
+        # --- [Content_Types].xml: register svg and png extensions ---
         ct_xml = zin.read(ct_name)
         ct_tree = etree.fromstring(ct_xml)
         ct_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
-        existing_exts = {e.get("Extension") for e in ct_tree.findall(f"{{{ct_ns}}}Default")}
-        if "svg" not in existing_exts:
-            svg_ct = etree.SubElement(ct_tree, f"{{{ct_ns}}}Default")
-            svg_ct.set("Extension", "svg")
-            svg_ct.set("ContentType", "image/svg+xml")
+        existing = {e.get("Extension") for e in ct_tree.findall(f"{{{ct_ns}}}Default")}
+        for ext, ct in [("svg", "image/svg+xml"), ("png", "image/png")]:
+            if ext not in existing:
+                el = etree.SubElement(ct_tree, f"{{{ct_ns}}}Default")
+                el.set("Extension", ext)
+                el.set("ContentType", ct)
         zout.writestr(ct_name, etree.tostring(ct_tree, xml_declaration=True,
-                                                             encoding="UTF-8", standalone=True))
+                                              encoding="UTF-8", standalone=True))
 
     os.makedirs(output_dir, exist_ok=True)
     stem = filename or _stem_from_url(png_s3_url)

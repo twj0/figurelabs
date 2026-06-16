@@ -1,0 +1,14 @@
+services:
+  app:
+    image: ghcr.io/twj0/figurelabs-ai:latest
+    ports:
+      - "${PORT:-11451}:${PORT:-11451}"
+    environment:
+      - PORT=${PORT:-11451}
+      - DB_PATH=/data/figurelabs.db
+    volumes:
+      - figurelabs_data:/data
+    restart: unless-stopped
+
+volumes:
+  figurelabs_data:

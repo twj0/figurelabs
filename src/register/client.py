@@ -151,7 +151,9 @@ class FigureLabsRegistration:
         if not code:
             raise Exception("Failed to retrieve verification code automatically")
 
-        return self.login(email, code, code_id)
+        data = self.login(email, code, code_id)
+        data.setdefault("email", email)
+        return data
 
     def register_manual(self, email: Optional[str] = None) -> Dict[str, Any]:
         """Manual registration flow with code input.
@@ -172,4 +174,6 @@ class FigureLabsRegistration:
         code_id = self.send_verification_code(email)
         code = input("\nEnter verification code: ").strip()
 
-        return self.login(email, code, code_id)
+        data = self.login(email, code, code_id)
+        data.setdefault("email", email)
+        return data

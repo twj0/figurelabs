@@ -5,7 +5,13 @@ description = "FigureLabs.ai API client and automation tools"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aiosqlite>=0.22.1",
+    "fastapi>=0.111",
+    "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.9",
+    "python-pptx>=1.0.2",
     "requests>=2.31.0",
+    "uvicorn[standard]>=0.29",
 ]
 authors = [
     {name = "FigureLabs Team"}

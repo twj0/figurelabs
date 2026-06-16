@@ -11,7 +11,6 @@ def make_session(access_token: str) -> requests.Session:
     s.headers.update(
         {
             "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
             "Origin": BASE_URL,
             "Referer": f"{BASE_URL}/",
         }

@@ -75,13 +75,11 @@ def main():
         fh.close()
         return 1
 
-    # model_id=7 (Nano Banana Pro) + ratio="Auto" is HAR-confirmed working combination.
-    # Passing ratio="16:9" without modelId causes status=2 on fresh accounts.
     message_id = chat.send_message(
         session_id,
         PROMPT,
         model_id=7,
-        ratio="Auto",
+        ratio="16:9",
         style="Flat",
         first_message=True,
     )
