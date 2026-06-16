@@ -145,8 +145,8 @@ CSS Modules            # 样式方案
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-username/figurelabs-ai.git
-cd figurelabs-ai
+git clone https://github.com/twj0/figurelabs.git
+cd figurelabs
 ```
 
 ### 2. 后端设置
