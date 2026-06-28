@@ -9,21 +9,33 @@ const FORMATS = [
 
 export default function MessageBubble({ msg, token }) {
   const [downloading, setDownloading] = useState(null)
+  const [downloadError, setDownloadError] = useState(null)
 
   async function handleDownload(fmt) {
     setDownloading(fmt)
+    setDownloadError(null)
     try {
+      // Always use backend API for downloads to avoid CORS issues
       const url = `/api/download/${msg.messageId}?token=${encodeURIComponent(token)}&fmt=${fmt}`
       const res = await fetch(url)
-      if (!res.ok) throw new Error('Download failed')
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: 'Download failed' }))
+        setDownloadError(errorData.detail || 'Download failed')
+        setDownloading(null)
+        return
+      }
       const blob = await res.blob()
+
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = `figure.${fmt}`
       a.click()
       URL.revokeObjectURL(a.href)
-    } catch (_) {}
-    finally { setDownloading(null) }
+    } catch (err) {
+      setDownloadError('Network error occurred')
+    } finally {
+      setDownloading(null)
+    }
   }
 
   if (msg.role === 'user') {
@@ -60,11 +72,20 @@ export default function MessageBubble({ msg, token }) {
         {msg.status === 'done' && (
           <div className={styles.doneCard}>
             <div className={styles.imageWrap}>
-              <img
-                src={`/api/download/${msg.messageId}?token=${encodeURIComponent(token)}&fmt=png`}
-                alt="Generated diagram"
-                className={styles.image}
-              />
+              {msg.outputType === 'svg' ? (
+                <iframe
+                  src={msg.file_url}
+                  title="Generated SVG diagram"
+                  className={styles.svgFrame}
+                  sandbox="allow-scripts"
+                />
+              ) : (
+                <img
+                  src={`/api/download/${msg.messageId}?token=${encodeURIComponent(token)}&fmt=png`}
+                  alt="Generated diagram"
+                  className={styles.image}
+                />
+              )}
             </div>
             <div className={styles.exportRow}>
               <span className={styles.exportLabel}>Export as:</span>
@@ -78,6 +99,9 @@ export default function MessageBubble({ msg, token }) {
                   {downloading === f.key ? '…' : f.label}
                 </button>
               ))}
+              {downloadError && (
+                <span className={styles.exportError}>{downloadError}</span>
+              )}
             </div>
           </div>
         )}

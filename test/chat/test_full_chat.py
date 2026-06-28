@@ -5,7 +5,7 @@ import sys
 from src.chat import FigureLabsChat
 
 
-def test_full_chat(access_token: str) -> bool:
+def run_full_chat(access_token: str) -> bool:
     """Complete chat test including waiting for AI response.
 
     Args:
@@ -72,5 +72,5 @@ if __name__ == "__main__":
 
     print(f"Using token: {test_token[:20]}...\n")
 
-    success = test_full_chat(test_token)
+    success = run_full_chat(test_token)
     sys.exit(0 if success else 1)

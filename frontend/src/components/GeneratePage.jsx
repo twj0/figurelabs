@@ -2,6 +2,40 @@ import { useState, useRef, useEffect } from 'react'
 import styles from './GeneratePage.module.css'
 import MessageBubble from './MessageBubble.jsx'
 
+const MODES = [
+  {
+    key: 'scientific',
+    label: 'Scientific Illustration',
+    icon: '🔬',
+    agentId: 7,
+    scene: 'gen-svg',
+    outputType: 'png', // Generates PNG bitmap images
+    templates: [
+      { id: 'general', label: 'General Science', description: 'Multi-domain scientific diagrams' },
+      { id: 'biology', label: 'Biology', description: 'Cell structures, DNA, molecules' },
+      { id: 'physics', label: 'Physics', description: 'Circuits, forces, optics' },
+      { id: 'chemistry', label: 'Chemistry', description: 'Reactions, compounds, lab equipment' },
+      { id: 'cs', label: 'Computer Science', description: 'Algorithms, data structures, networks' },
+    ]
+  },
+  {
+    key: 'flowchart',
+    label: 'Flowcharts & Diagrams',
+    icon: '📊',
+    agentId: 0,
+    scene: 'tech-roadmap',
+    outputType: 'svg', // Generates SVG vector code
+    templates: [
+      { id: 'tech-roadmap', label: 'Tech Roadmap', description: 'Technology roadmap diagrams' },
+      { id: 'framework', label: 'Framework', description: 'Framework architecture diagrams' },
+      { id: 'research-workflow', label: 'Research Workflow', description: 'Research process flows' },
+      { id: 'fishbone', label: 'Fishbone Diagram', description: 'Cause-and-effect analysis' },
+      { id: 'consort-flow-diagram', label: 'CONSORT Flow', description: 'Clinical trial flow diagrams' },
+      { id: 'prisma-flow-diagram', label: 'PRISMA Flow', description: 'Systematic review flow' },
+    ]
+  }
+]
+
 const MODELS = [
   { id: 7,  label: 'Nano Banana Pro', sub: 'Gemini · ~30s' },
   { id: 12, label: 'GPT Image 2',     sub: 'OpenAI · ~90s' },
@@ -12,6 +46,8 @@ const RATIOS = ['16:9', '1:1', '4:3', '3:2', '2:3', '9:16', '3:4']
 export default function GeneratePage({ account }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
+  const [mode, setMode] = useState('scientific')
+  const [template, setTemplate] = useState('general')
   const [modelId, setModelId] = useState(7)
   const [ratio, setRatio] = useState('16:9')
   const [sessionId, setSessionId] = useState(null)
@@ -19,8 +55,16 @@ export default function GeneratePage({ account }) {
   const [expanding, setExpanding] = useState(false)
   const bottomRef = useRef(null)
 
+  const currentMode = MODES.find(m => m.key === mode)
+
   // Reset session when account changes
   useEffect(() => { setSessionId(null); setMessages([]) }, [account.user_id])
+
+  // Reset template when mode changes
+  useEffect(() => {
+    const firstTemplate = MODES.find(m => m.key === mode)?.templates[0]?.id
+    if (firstTemplate) setTemplate(firstTemplate)
+  }, [mode])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -31,7 +75,11 @@ export default function GeneratePage({ account }) {
     const r = await fetch('/api/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ access_token: account.access_token, title: 'New Diagram' }),
+      body: JSON.stringify({
+        access_token: account.access_token,
+        title: `${currentMode.label} - ${new Date().toLocaleDateString()}`,
+        agent_id: currentMode.agentId
+      }),
     })
     if (!r.ok) throw new Error('Failed to create session')
     const { session_id } = await r.json()
@@ -81,6 +129,7 @@ export default function GeneratePage({ account }) {
           text,
           model_id: modelId,
           ratio,
+          scene: currentMode.scene,
         }),
       })
       if (!r.ok) { const d = await r.json(); throw new Error(d.detail) }
@@ -94,7 +143,13 @@ export default function GeneratePage({ account }) {
             clearInterval(poll)
             setMessages(prev => prev.map(m =>
               m.id === pendingId
-                ? { ...m, status: 'done', message_id, file_url: st.file_url[0] }
+                ? {
+                    ...m,
+                    status: 'done',
+                    messageId: message_id,
+                    file_url: st.file_url[0],
+                    outputType: currentMode.outputType
+                  }
                 : m
             ))
             setBusy(false)
@@ -125,6 +180,36 @@ export default function GeneratePage({ account }) {
     <div className={styles.layout}>
       {/* Sidebar */}
       <aside className={styles.sidebar}>
+        <div className={styles.section}>
+          <p className={styles.sectionLabel}>Mode</p>
+          {MODES.map(m => (
+            <button
+              key={m.key}
+              className={`${styles.modeBtn} ${mode === m.key ? styles.modeActive : ''}`}
+              onClick={() => setMode(m.key)}
+            >
+              <span className={styles.modeIcon}>{m.icon}</span>
+              <span className={styles.modeLabel}>{m.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.section}>
+          <p className={styles.sectionLabel}>Template</p>
+          <div className={styles.templateList}>
+            {currentMode?.templates.map(t => (
+              <button
+                key={t.id}
+                className={`${styles.templateBtn} ${template === t.id ? styles.templateActive : ''}`}
+                onClick={() => setTemplate(t.id)}
+                title={t.description}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className={styles.section}>
           <p className={styles.sectionLabel}>Model</p>
           {MODELS.map(m => (
@@ -168,11 +253,15 @@ export default function GeneratePage({ account }) {
               <p className={styles.emptyTitle}>Describe your diagram</p>
               <p className={styles.emptyHint}>Use "Enhance" to expand a short idea into a detailed prompt</p>
               <div className={styles.examples}>
-                {[
-                  'CCHP system schematic with energy flows',
-                  'Genetic algorithm flowchart',
-                  'Microservices architecture diagram',
-                ].map(ex => (
+                {(mode === 'scientific' ? [
+                  'Cell membrane transport mechanisms with protein channels',
+                  'Neural network deep learning architecture diagram',
+                  'Photosynthesis light-dependent reactions in chloroplast',
+                ] : [
+                  'Software development lifecycle roadmap with milestones',
+                  'Root cause analysis fishbone diagram for production issues',
+                  'Clinical trial participant flow CONSORT diagram',
+                ]).map(ex => (
                   <button key={ex} className={styles.exBtn} onClick={() => setInput(ex)}>{ex}</button>
                 ))}
               </div>

@@ -5,7 +5,38 @@ import sys
 from src.chat import FigureLabsChatExtended
 
 
-def test_advanced_chat(access_token: str) -> bool:
+class DelegatingAdvancedChat(FigureLabsChatExtended):
+    def __init__(self):
+        pass
+
+    def send_message(self, *args, **kwargs):
+        self.sent_args = args
+        self.sent_kwargs = kwargs
+        return "message-1"
+
+
+def test_send_message_advanced_delegates_to_base_sender():
+    client = DelegatingAdvancedChat()
+
+    result = client.send_message_advanced(
+        session_id="session-1",
+        text="Draw a diagram",
+        model_id=7,
+        ratio="16:9",
+        style="Flat",
+        first_message=True,
+    )
+
+    assert result == "message-1"
+    assert client.sent_args[:2] == ("session-1", "Draw a diagram")
+    assert client.sent_kwargs["model_id"] == 7
+    assert client.sent_kwargs["ratio"] == "16:9"
+    assert client.sent_kwargs["style"] == "Flat"
+    assert client.sent_kwargs["first_message"] is True
+    assert client.sent_kwargs["scene"] == "gen-svg"
+
+
+def run_advanced_chat(access_token: str) -> bool:
     """Test advanced chat features with model and style parameters.
 
     Args:
@@ -100,5 +131,5 @@ if __name__ == "__main__":
 
     print(f"Using token: {test_token[:20]}...\n")
 
-    success = test_advanced_chat(test_token)
+    success = run_advanced_chat(test_token)
     sys.exit(0 if success else 1)

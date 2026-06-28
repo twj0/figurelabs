@@ -3,75 +3,103 @@
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+  background: #f6f8fa;
 }
 
 .nav {
-  height: 52px;
+  height: 56px;
   flex-shrink: 0;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: #ffffff;
+  border-bottom: 1px solid #d0d7de;
   display: flex;
   align-items: center;
-  padding: 0 20px;
-  gap: 24px;
+  padding: 0 24px;
+  gap: 32px;
 }
 
 .navLogo {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--text);
+  font-weight: 600;
+  font-size: 16px;
+  color: #24292f;
   flex-shrink: 0;
 }
 
 .navTabs {
   display: flex;
-  gap: 2px;
+  gap: 4px;
+  flex: 1;
 }
 
 .navTab {
   background: none;
-  border-radius: 7px;
-  padding: 6px 14px;
-  font-size: 13px;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
   font-weight: 500;
-  color: var(--text-muted);
-  transition: all 0.15s;
-  border: 1px solid transparent;
+  color: #656d76;
+  transition: all 0.2s;
+  border: none;
 }
-.navTab:hover:not(:disabled) { color: var(--text); background: var(--surface2); }
-.navTab.active { color: var(--accent); background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.2); }
-.navTab:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.navTab:hover:not(:disabled) {
+  color: #24292f;
+  background: #f6f8fa;
+}
+
+.navTab.active {
+  color: #ffffff;
+  background: #1f6feb;
+}
+
+.navTab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .navAccount {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  color: var(--text-muted);
+  gap: 8px;
+  font-size: 13px;
+  color: #656d76;
+  padding: 6px 12px;
+  background: #f6f8fa;
+  border-radius: 6px;
 }
 
 .navDot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--success);
+  background: #1a7f64;
   flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .navAccountLabel {
-  max-width: 180px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
+  color: #24292f;
 }
 
 .content {
   flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  overflow: auto;
+  background: #f6f8fa;
 }

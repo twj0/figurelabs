@@ -2,12 +2,14 @@
 
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 PORT: int = int(os.getenv("PORT", "11451"))
 DB_PATH: str = os.getenv("DB_PATH", "./data/figurelabs.db")
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", os.getenv("API_KEY", ""))
 
 # Ensure parent directory exists at import time
 Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)

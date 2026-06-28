@@ -23,6 +23,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "black>=23.0.0",
+    "httpx2>=2.5.0",
     "ruff>=0.1.0",
 ]
 
@@ -51,6 +52,7 @@ ignore = []
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.5.0",
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
 ]

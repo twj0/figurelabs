@@ -1,6 +1,6 @@
 """Export client — resolves message status and dispatches to formats."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -27,14 +27,22 @@ class ExportClient:
             pass
         return None
 
-    def get_png_urls(self, message_id: str) -> List[str]:
+    def get_file_urls(self, message_id: str) -> Tuple[List[str], Optional[str]]:
+        """Return (file_urls, file_type) tuple. file_type is '.svg' or None."""
         status = self.get_message_status(message_id)
         if not status:
-            return []
+            return [], None
         if status.get("status") != 1:
             print(f"[export] not ready (status={status.get('status')})")
-            return []
-        return status.get("fileUrl", [])
+            return [], None
+        file_urls = status.get("fileUrl", [])
+        file_type = status.get("fileType")  # '.svg' for SVG outputs
+        return file_urls, file_type
+
+    def get_png_urls(self, message_id: str) -> List[str]:
+        """Legacy method - returns file URLs regardless of type."""
+        urls, _ = self.get_file_urls(message_id)
+        return urls
 
     def download(
         self,

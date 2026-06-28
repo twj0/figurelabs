@@ -224,3 +224,28 @@ class FigureLabsChat:
         if result["code"] == 0:
             return result["data"]
         return None
+
+
+class FigureLabsChatExtended(FigureLabsChat):
+    def get_available_models(self, scene: str = "iiterature") -> Optional[list]:
+        return self.get_model_list(scene)
+
+    def send_message_advanced(
+        self,
+        session_id: str,
+        text: str,
+        model_id: Optional[int] = 7,
+        ratio: Optional[str] = "16:9",
+        style: Optional[str] = None,
+        first_message: bool = False,
+        scene: str = "gen-svg",
+    ) -> Optional[str]:
+        return self.send_message(
+            session_id,
+            text,
+            model_id=model_id,
+            ratio=ratio,
+            style=style,
+            first_message=first_message,
+            scene=scene,
+        )

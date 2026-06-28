@@ -1,25 +1,25 @@
 """FastAPI application — REST API + static frontend hosting."""
 
 import asyncio
-from contextlib import asynccontextmanager
+import json
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import Response
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from ..config import PORT
-from ..db import init_db, save_account, list_accounts, get_account, delete_account, update_label
 from ..chat.client import FigureLabsChat
-from ..export.client import ExportClient
-from ..export.formats import _request_svg_url, _PROXY
-from ..export._session import make_session
-from ..register.client import FigureLabsRegistration
-from ..register.mail_service import MailTmService, DuckMailService
+from ..config import OPENAI_API_KEY
 from ..core.database import stats_db
-
+from ..db import delete_account, init_db, list_accounts, save_account, update_label
+from ..export._session import make_session
+from ..export.client import ExportClient
+from ..export.formats import _PROXY, _request_svg_url
+from ..register.client import FigureLabsRegistration
+from ..register.mail_service import DuckMailService, MailTmService
 
 app = FastAPI(title="FigureLabs AI", docs_url=None, redoc_url=None)
 
@@ -71,6 +71,7 @@ class LabelUpdate(BaseModel):
 class SessionCreate(BaseModel):
     access_token: str
     title: str = "New Diagram"
+    agent_id: int = 0
 
 
 class SessionResponse(BaseModel):
@@ -83,6 +84,8 @@ class MessageSend(BaseModel):
     text: str
     model_id: int = 7
     ratio: str = "16:9"
+    scene: str = "gen-svg"
+    style: Optional[str] = None
 
 
 class MessageResponse(BaseModel):
@@ -103,6 +106,32 @@ class ExpandRequest(BaseModel):
 
 class ExpandResponse(BaseModel):
     expanded: str
+
+
+_OPENAI_MODEL_IDS = {
+    "figurelabs-nano-banana": 6,
+    "figurelabs-nano-banana-pro": 7,
+    "figurelabs-banana-2": 10,
+    "figurelabs-gpt-image-2": 12,
+}
+_DEFAULT_OPENAI_MODEL = "figurelabs-nano-banana-pro"
+
+
+class OpenAIMessage(BaseModel):
+    role: str
+    content: str | list[dict[str, Any]]
+
+
+class OpenAIChatRequest(BaseModel):
+    model: str = _DEFAULT_OPENAI_MODEL
+    messages: list[OpenAIMessage]
+    stream: bool = False
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    ratio: str = "16:9"
+    scene: str = "gen-svg"
+    style: Optional[str] = None
+    wait_timeout: int = 180
 
 
 # In-memory store for pending DuckMail flows {pending_id -> (email, username, code_id, reg)}
@@ -190,7 +219,7 @@ async def api_update_label(user_id: str, body: LabelUpdate):
 @app.post("/api/session", response_model=SessionResponse)
 async def api_create_session(body: SessionCreate):
     chat = FigureLabsChat(body.access_token)
-    sid = await asyncio.to_thread(chat.create_session, body.title)
+    sid = await asyncio.to_thread(chat.create_session, body.title, body.agent_id)
     if not sid:
         raise HTTPException(status_code=400, detail="Failed to create session")
     return SessionResponse(session_id=sid)
@@ -202,7 +231,7 @@ async def api_send_message(body: MessageSend):
     mid = await asyncio.to_thread(
         chat.send_message,
         body.session_id, body.text,
-        None, body.model_id, body.ratio, None, True,
+        "NORMAL_CHAT", body.model_id, body.ratio, body.style, True, body.scene,
     )
     if not mid:
         raise HTTPException(status_code=400, detail="Failed to send message")
@@ -240,17 +269,31 @@ async def api_expand(body: ExpandRequest):
 @app.get("/api/download/{message_id}")
 async def api_download(message_id: str, token: str, fmt: str = "png"):
     exp = ExportClient(token)
-    urls = await asyncio.to_thread(exp.get_png_urls, message_id)
+    urls, file_type = await asyncio.to_thread(exp.get_file_urls, message_id)
     if not urls:
         raise HTTPException(status_code=404, detail="Image not ready")
 
-    png_url = urls[0]
+    file_url = urls[0]
     session = make_session(token)
     fmt = fmt.lower()
 
+    # If source is SVG and user wants SVG, download directly
+    if file_type == ".svg" and fmt == "svg":
+        resp = await asyncio.to_thread(
+            lambda: session.get(file_url, stream=True)
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="SVG fetch failed")
+        return Response(
+            content=resp.content,
+            media_type="image/svg+xml",
+            headers={"Content-Disposition": 'attachment; filename="figure.svg"'},
+        )
+
+    # For PNG outputs or conversions, use the proxy
     if fmt in ("png", "jpg", "jpeg"):
         resp = await asyncio.to_thread(
-            lambda: session.get(_PROXY, params={"url": png_url}, stream=True)
+            lambda: session.get(_PROXY, params={"url": file_url}, stream=True)
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail="Upstream error")
@@ -262,9 +305,13 @@ async def api_download(message_id: str, token: str, fmt: str = "png"):
         )
 
     elif fmt == "svg":
-        svg_url = await asyncio.to_thread(_request_svg_url, session, png_url)
+        # Convert PNG to SVG
+        svg_url = await asyncio.to_thread(_request_svg_url, session, file_url)
         if not svg_url:
-            raise HTTPException(status_code=502, detail="SVG conversion failed")
+            raise HTTPException(
+                status_code=400,
+                detail="SVG conversion failed. This may require additional credits or the image may not be convertible to SVG format."
+            )
         resp = await asyncio.to_thread(
             lambda: session.get(_PROXY, params={"url": svg_url}, stream=True)
         )
@@ -277,7 +324,7 @@ async def api_download(message_id: str, token: str, fmt: str = "png"):
         )
 
     elif fmt == "pptx":
-        data = await asyncio.to_thread(_build_pptx_bytes, session, png_url)
+        data = await asyncio.to_thread(_build_pptx_bytes, session, file_url, file_type)
         if data is None:
             raise HTTPException(status_code=502, detail="PPTX build failed")
         return Response(
@@ -289,22 +336,31 @@ async def api_download(message_id: str, token: str, fmt: str = "png"):
     raise HTTPException(status_code=400, detail=f"Unknown format: {fmt}")
 
 
-def _build_pptx_bytes(session, png_s3_url: str) -> Optional[bytes]:
-    from ..export.formats import _request_svg_url, _PROXY
+def _build_pptx_bytes(session, file_url: str, file_type: Optional[str] = None) -> Optional[bytes]:
+    from ..export.formats import _PROXY, _request_svg_url
     try:
-        from pptx import Presentation
-        from pptx.util import Emu
-        from pptx.oxml.ns import qn
+        import io
+        import zipfile
+
         from lxml import etree
-        import zipfile, io
+        from pptx import Presentation
+        from pptx.oxml.ns import qn
+        from pptx.util import Emu
     except ImportError:
         return None
 
-    png_bytes = session.get(_PROXY, params={"url": png_s3_url}, stream=True).content
-    svg_url = _request_svg_url(session, png_s3_url)
-    if not svg_url:
-        return None
-    svg_bytes = session.get(_PROXY, params={"url": svg_url}, stream=True).content
+    # If source is already SVG, use it directly
+    if file_type == ".svg":
+        svg_bytes = session.get(file_url, stream=True).content
+        # Try to convert SVG to PNG for preview (optional)
+        png_bytes = svg_bytes  # Fallback to SVG if no conversion available
+    else:
+        # Source is PNG
+        png_bytes = session.get(_PROXY, params={"url": file_url}, stream=True).content
+        svg_url = _request_svg_url(session, file_url)
+        if not svg_url:
+            return None
+        svg_bytes = session.get(_PROXY, params={"url": svg_url}, stream=True).content
 
     try:
         root = etree.fromstring(svg_bytes)
@@ -411,6 +467,235 @@ async def api_get_total_counts():
     """Get total success and failed request counts."""
     success, failed = await stats_db.get_total_counts()
     return TotalCountsResponse(success=success, failed=failed)
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-compatible API
+# ---------------------------------------------------------------------------
+
+def _extract_bearer_token(authorization: Optional[str]) -> str:
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    value = authorization.strip()
+    if value.lower().startswith("bearer "):
+        value = value[7:].strip()
+    if not value:
+        raise HTTPException(status_code=401, detail="Missing Authorization token")
+    return value
+
+
+async def _resolve_openai_access_token(authorization: Optional[str]) -> str:
+    token = _extract_bearer_token(authorization)
+    valid_keys = [key.strip() for key in OPENAI_API_KEY.split(",") if key.strip()]
+    if not valid_keys:
+        return token
+
+    if token not in valid_keys:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+
+    accounts = await list_accounts()
+    if not accounts:
+        raise HTTPException(status_code=503, detail="No FigureLabs account available")
+    return accounts[0]["access_token"]
+
+
+def _resolve_openai_model_id(model: str) -> int:
+    if model in _OPENAI_MODEL_IDS:
+        return _OPENAI_MODEL_IDS[model]
+    if model.isdigit():
+        return int(model)
+    raise HTTPException(
+        status_code=404,
+        detail=f"Model '{model}' not found. Available models: {list(_OPENAI_MODEL_IDS)}",
+    )
+
+
+def _message_content_to_text(content: str | list[dict[str, Any]]) -> str:
+    if isinstance(content, str):
+        return content
+
+    parts: list[str] = []
+    for item in content:
+        if item.get("type") == "text" and item.get("text"):
+            parts.append(str(item["text"]))
+        elif item.get("text"):
+            parts.append(str(item["text"]))
+    return "\n".join(parts)
+
+
+def _build_openai_prompt(messages: list[OpenAIMessage]) -> str:
+    if not messages:
+        raise HTTPException(status_code=400, detail="messages must not be empty")
+
+    parts = [
+        (message.role, _message_content_to_text(message.content))
+        for message in messages
+        if _message_content_to_text(message.content).strip()
+    ]
+    if not parts:
+        raise HTTPException(status_code=400, detail="messages must include text content")
+    if len(parts) == 1:
+        return parts[0][1]
+    return "\n".join(f"{role}: {content}" for role, content in parts)
+
+
+def _build_figurelabs_result_text(
+    session_id: str,
+    message_id: str,
+    status: Optional[dict[str, Any]],
+) -> str:
+    lines = [
+        "FigureLabs generation completed." if status else "FigureLabs generation submitted.",
+        f"session_id: {session_id}",
+        f"message_id: {message_id}",
+    ]
+    urls = (status or {}).get("fileUrl") or []
+    for url in urls:
+        lines.append(f"file_url: {url}")
+    return "\n".join(lines)
+
+
+async def _run_openai_completion(
+    body: OpenAIChatRequest,
+    access_token: str,
+) -> tuple[str, str, str]:
+    prompt = _build_openai_prompt(body.messages)
+    model_id = _resolve_openai_model_id(body.model)
+    chat = FigureLabsChat(access_token)
+
+    session_id = await asyncio.to_thread(chat.create_session, prompt[:80] or "OpenAI Chat", 0)
+    if not session_id:
+        raise HTTPException(status_code=502, detail="Failed to create FigureLabs session")
+
+    message_id = await asyncio.to_thread(
+        chat.send_message,
+        session_id,
+        prompt,
+        "NORMAL_CHAT",
+        model_id,
+        body.ratio,
+        body.style,
+        True,
+        body.scene,
+    )
+    if not message_id:
+        raise HTTPException(status_code=502, detail="Failed to send FigureLabs message")
+
+    status = await asyncio.to_thread(chat.wait_for_completion, message_id, body.wait_timeout, 3)
+    return _build_figurelabs_result_text(session_id, message_id, status), session_id, message_id
+
+
+def _chat_completion_response(
+    completion_id: str,
+    created: int,
+    model: str,
+    content: str,
+) -> dict[str, Any]:
+    return {
+        "id": completion_id,
+        "object": "chat.completion",
+        "created": created,
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "logprobs": None,
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+
+def _chat_completion_chunk(
+    completion_id: str,
+    created: int,
+    model: str,
+    delta: dict[str, Any],
+    finish_reason: Optional[str] = None,
+) -> str:
+    return json.dumps(
+        {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": delta,
+                    "logprobs": None,
+                    "finish_reason": finish_reason,
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+@app.get("/v1/models")
+async def openai_list_models():
+    now = int(time.time())
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": model,
+                "object": "model",
+                "created": now,
+                "owned_by": "figurelabs",
+                "permission": [],
+            }
+            for model in _OPENAI_MODEL_IDS
+        ],
+    }
+
+
+@app.get("/v1/models/{model_id}")
+async def openai_get_model(model_id: str):
+    _resolve_openai_model_id(model_id)
+    return {"id": model_id, "object": "model", "owned_by": "figurelabs"}
+
+
+@app.post("/v1/chat/completions")
+async def openai_chat_completions(
+    body: OpenAIChatRequest,
+    authorization: Optional[str] = Header(None),
+):
+    access_token = await _resolve_openai_access_token(authorization)
+    created = int(time.time())
+    completion_id = f"chatcmpl-{created}"
+
+    if body.stream:
+        async def stream_events():
+            role_chunk = _chat_completion_chunk(
+                completion_id,
+                created,
+                body.model,
+                {"role": "assistant"},
+            )
+            yield f"data: {role_chunk}\n\n"
+
+            content, _, message_id = await _run_openai_completion(body, access_token)
+            chunk_id = f"chatcmpl-{message_id}"
+            content_chunk = _chat_completion_chunk(
+                chunk_id,
+                created,
+                body.model,
+                {"content": content},
+            )
+            yield f"data: {content_chunk}\n\n"
+
+            stop_chunk = _chat_completion_chunk(chunk_id, created, body.model, {}, "stop")
+            yield f"data: {stop_chunk}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(stream_events(), media_type="text/event-stream")
+
+    content, _, message_id = await _run_openai_completion(body, access_token)
+    return _chat_completion_response(f"chatcmpl-{message_id}", created, body.model, content)
 
 
 # ---------------------------------------------------------------------------

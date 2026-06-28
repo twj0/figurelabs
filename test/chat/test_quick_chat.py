@@ -5,7 +5,7 @@ import sys
 from src.chat import FigureLabsChat
 
 
-def test_quick_chat(access_token: str) -> bool:
+def run_quick_chat(access_token: str) -> bool:
     """Quick chat test without waiting for AI generation.
 
     Args:
@@ -61,5 +61,5 @@ if __name__ == "__main__":
 
     print(f"Token: {test_token[:20]}...\n")
 
-    success = test_quick_chat(test_token)
+    success = run_quick_chat(test_token)
     sys.exit(0 if success else 1)

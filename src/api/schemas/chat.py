@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class SessionCreate(BaseModel):
     access_token: str
     title: str = "New Diagram"
+    agent_id: int = 0
 
 
 class SessionResponse(BaseModel):
@@ -19,6 +20,8 @@ class MessageSend(BaseModel):
     text: str
     model_id: int = 7
     ratio: str = "16:9"
+    scene: str = "gen-svg"
+    style: Optional[str] = None
 
 
 class MessageResponse(BaseModel):

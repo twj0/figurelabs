@@ -5,7 +5,7 @@ import sys
 import requests
 
 
-def test_token_verification(access_token: str) -> bool:
+def run_token_verification(access_token: str) -> bool:
     """Verify token and retrieve user information.
 
     Args:
@@ -48,5 +48,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         test_token = sys.argv[1]
 
-    success = test_token_verification(test_token)
+    success = run_token_verification(test_token)
     sys.exit(0 if success else 1)
